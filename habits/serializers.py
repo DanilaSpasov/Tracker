@@ -7,7 +7,10 @@ class HabitSerializer(serializers.ModelSerializer):
     class Meta:
         model = Habit
         fields = "__all__"
-        read_only_fields = ("owner",)
+        read_only_fields = (
+            "owner",
+            "last_notification_at",
+        )
 
     def validate(self, data):
         is_pleasant = data.get(
@@ -24,25 +27,16 @@ class HabitSerializer(serializers.ModelSerializer):
         )
         if reward and related_habit:
             raise serializers.ValidationError(
-                "Нельзя одновременно указывать вознаграждение "
-                "и связанную привычку."
+                "Нельзя одновременно указывать вознаграждение " "и связанную привычку."
             )
         if related_habit and not related_habit.is_pleasant:
             raise serializers.ValidationError(
                 "Связанной может быть только приятная привычка."
             )
         request = self.context.get("request")
-        if (
-            related_habit
-            and request
-            and related_habit.owner_id != request.user.id
-        ):
+        if related_habit and request and related_habit.owner_id != request.user.id:
             raise serializers.ValidationError(
-                {
-                    "related_habit": (
-                        "Можно связывать только собственные привычки."
-                    )
-                }
+                {"related_habit": ("Можно связывать только собственные привычки.")}
             )
         if is_pleasant and (reward or related_habit):
             raise serializers.ValidationError(

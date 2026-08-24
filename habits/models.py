@@ -38,6 +38,11 @@ class Habit(models.Model):
         default=False,
         verbose_name="Признак публичности",
     )
+    last_notification_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name="Последнее напоминание",
+    )
 
     def __str__(self):
         return f"{self.action} {self.time} {self.place}"
