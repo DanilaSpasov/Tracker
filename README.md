@@ -151,6 +151,7 @@ cp .env_example .env
 
 * `DJANGO_SECRET_KEY` — секретный ключ Django;
 * `DEBUG` — режим отладки;
+* `ALLOWED_HOSTS` — разрешённые домены Django;
 * `DB_NAME`, `DB_USER`, `DB_PASSWORD`, `DB_HOST`, `DB_PORT` — параметры PostgreSQL;
 * `CORS_ALLOWED_ORIGINS` — разрешённые адреса фронтенда;
 * `CELERY_BROKER_URL` — адрес Redis для очереди задач;
@@ -212,6 +213,40 @@ poetry run celery -A config beat --loglevel=info
 * `PATCH /api/habits/{id}/` — частичное редактирование собственной привычки;
 * `DELETE /api/habits/{id}/` — удаление собственной привычки;
 * `GET /api/habits/public/` — список публичных привычек.
+
+---
+
+# Тестирование
+
+В проекте реализовано 26 тестов с помощью `unittest`, `TestCase` и `APITestCase`.
+
+Проверяются:
+
+* регистрация, создание пользователей и JWT-аутентификация;
+* CRUD привычек, права владельца и публичный список;
+* пагинация и валидаторы привычек;
+* отправка сообщений через Telegram API;
+* периодичность Celery-уведомлений и сохранение времени отправки.
+
+Внешние запросы к Telegram заменяются с помощью `Mock` и `patch`, поэтому во время тестирования реальные сообщения не отправляются.
+
+Запуск тестов:
+
+```
+poetry run python manage.py test
+```
+
+Проверка покрытия:
+
+```
+poetry run coverage run manage.py test
+poetry run coverage report
+poetry run coverage html
+```
+
+Текущее покрытие проекта — **96%**.
+
+HTML-отчёт о покрытии сохраняется в `htmlcov/index.html`.
 
 ---
 
