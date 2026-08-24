@@ -31,6 +31,19 @@ class HabitSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError(
                 "Связанной может быть только приятная привычка."
             )
+        request = self.context.get("request")
+        if (
+            related_habit
+            and request
+            and related_habit.owner_id != request.user.id
+        ):
+            raise serializers.ValidationError(
+                {
+                    "related_habit": (
+                        "Можно связывать только собственные привычки."
+                    )
+                }
+            )
         if is_pleasant and (reward or related_habit):
             raise serializers.ValidationError(
                 "У приятной привычки не может быть вознаграждения "
