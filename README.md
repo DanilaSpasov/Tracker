@@ -18,6 +18,10 @@
 * **Telegram:** Telegram Bot API
 * **Документация API:** drf-spectacular, Swagger UI, ReDoc
 * **Менеджер зависимостей:** Poetry
+* **Production-сервер:** Gunicorn
+* **Reverse proxy:** Nginx
+* **Контейнеризация:** Docker, Docker Compose
+* **CI/CD:** GitHub Actions
 * **Контроль версий:** Git / GitHub
 
 ---
@@ -162,33 +166,63 @@ cp .env_example .env
 
 ---
 
-# Установка и запуск
+# Запуск через Docker Compose
 
-Для проекта требуются Python 3.14, Poetry, PostgreSQL и Redis.
+Для запуска требуется Docker с поддержкой Docker Compose. 
 
-1. Установите зависимости:
+Создайте `.env` и замените значения-заглушки:
+
+```
+cp .env_example .env
+```
+
+Запустите весь проект одной командой:
+
+```
+docker compose up -d --build
+```
+
+Команда создаёт и запускает шесть сервисов:
+
+* `db` — PostgreSQL;
+* `redis` — Redis;
+* `web` — Django и Gunicorn;
+* `celery_worker` — обработчик фоновых задач;
+* `celery_beat` — планировщик напоминаний;
+* `nginx` — принимает HTTP-запросы и раздаёт статику.
+
+При запуске `web` автоматически применяет миграции и выполняет `collectstatic`.
+PostgreSQL, Redis и Gunicorn доступны только внутри Docker-сети. Наружу открыт
+только порт `80` контейнера Nginx.
+
+Проверка состояния и приложения:
+
+```
+docker compose ps
+curl --fail http://localhost/api/schema/
+```
+
+
+Данные PostgreSQL и Redis сохраняются в Docker volumes. Команда
+`docker compose down -v` удаляет volumes вместе с данными и не должна
+использоваться при обычной остановке проекта.
+
+## Локальный запуск без Docker
+
+Для запуска через Poetry замените в `.env` контейнерные адреса:
+
+```
+DB_HOST=localhost
+CELERY_BROKER_URL=redis://localhost:6379/0
+CELERY_RESULT_BACKEND=redis://localhost:6379/1
+```
+
+Установите зависимости, примените миграции и в отдельных терминалах запустите
+Django, Celery Worker и Celery Beat:
 
 ```
 poetry install
-```
-
-2. Создайте `.env` на основе `.env_example`, заполните переменные и создайте базу данных PostgreSQL.
-
-3. Примените миграции:
-
-```
 poetry run python manage.py migrate
-```
-
-4. Запустите Redis:
-
-```
-brew services start redis
-```
-
-5. В отдельных терминалах запустите Django, Celery Worker и Celery Beat:
-
-```
 poetry run python manage.py runserver
 poetry run celery -A config worker --loglevel=info --pool=solo
 poetry run celery -A config beat --loglevel=info
@@ -247,6 +281,24 @@ poetry run coverage html
 Текущее покрытие проекта — **96%**.
 
 HTML-отчёт о покрытии сохраняется в `htmlcov/index.html`.
+
+---
+
+# CI/CD и деплой
+
+Workflow `.github/workflows/ci-cd.yml` запускается для каждого `pull_request`
+и `push`.
+
+Pipeline выполняется последовательно:
+
+```
+Black и тесты → сборка Docker-образов → деплой
+```
+
+Проверяются форматирование Black, настройки Django, наличие незаписанных
+миграций, 26 тестов и возможность сборки Docker-сервисов. Если один из этапов
+завершается ошибкой, следующие этапы не запускаются. Деплой пропускается для
+Pull Request и выполняется только после успешного `push` или merge в `develop`.
 
 ---
 
