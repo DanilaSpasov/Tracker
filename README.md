@@ -18,6 +18,10 @@
 * **Telegram:** Telegram Bot API
 * **Документация API:** drf-spectacular, Swagger UI, ReDoc
 * **Менеджер зависимостей:** Poetry
+* **Production-сервер:** Gunicorn
+* **Reverse proxy:** Nginx
+* **Контейнеризация:** Docker, Docker Compose
+* **CI/CD:** GitHub Actions
 * **Контроль версий:** Git / GitHub
 
 ---
@@ -162,33 +166,83 @@ cp .env_example .env
 
 ---
 
-# Установка и запуск
+# Запуск через Docker Compose
 
-Для проекта требуются Python 3.14, Poetry, PostgreSQL и Redis.
+Для запуска требуется Docker с поддержкой Docker Compose. На macOS сначала запустите Docker Desktop.
 
-1. Установите зависимости:
+Создайте `.env` и замените значения-заглушки:
+
+```
+cp .env_example .env
+```
+
+Запустите весь проект одной командой:
+
+```
+docker compose up -d --build
+```
+
+Команда создаёт и запускает шесть сервисов:
+
+* `db` — PostgreSQL;
+* `redis` — Redis;
+* `web` — Django и Gunicorn;
+* `celery_worker` — обработчик фоновых задач;
+* `celery_beat` — планировщик напоминаний;
+* `nginx` — принимает HTTP-запросы и раздаёт статику.
+
+При запуске `web` автоматически применяет миграции и выполняет `collectstatic`.
+PostgreSQL, Redis и Gunicorn доступны только внутри Docker-сети. Наружу открыт
+только порт `80` контейнера Nginx.
+
+Проверка состояния и приложения:
+
+```
+docker compose ps
+curl --fail http://localhost/api/schema/
+```
+
+Swagger UI после запуска доступен по адресу
+`http://localhost/api/docs/swagger/`.
+
+Тесты внутри контейнера:
+
+```
+docker compose exec web poetry run python manage.py test --noinput
+```
+
+Просмотр логов:
+
+```
+docker compose logs -f
+```
+
+Остановка контейнеров без удаления данных:
+
+```
+docker compose down
+```
+
+Данные PostgreSQL и Redis сохраняются в Docker volumes. Команда
+`docker compose down -v` удаляет volumes вместе с данными и не должна
+использоваться при обычной остановке проекта.
+
+## Локальный запуск без Docker
+
+Для запуска через Poetry замените в `.env` контейнерные адреса:
+
+```
+DB_HOST=localhost
+CELERY_BROKER_URL=redis://localhost:6379/0
+CELERY_RESULT_BACKEND=redis://localhost:6379/1
+```
+
+Установите зависимости, примените миграции и в отдельных терминалах запустите
+Django, Celery Worker и Celery Beat:
 
 ```
 poetry install
-```
-
-2. Создайте `.env` на основе `.env_example`, заполните переменные и создайте базу данных PostgreSQL.
-
-3. Примените миграции:
-
-```
 poetry run python manage.py migrate
-```
-
-4. Запустите Redis:
-
-```
-brew services start redis
-```
-
-5. В отдельных терминалах запустите Django, Celery Worker и Celery Beat:
-
-```
 poetry run python manage.py runserver
 poetry run celery -A config worker --loglevel=info --pool=solo
 poetry run celery -A config beat --loglevel=info
@@ -247,6 +301,119 @@ poetry run coverage html
 Текущее покрытие проекта — **96%**.
 
 HTML-отчёт о покрытии сохраняется в `htmlcov/index.html`.
+
+---
+
+# CI/CD и деплой
+
+Workflow `.github/workflows/ci-cd.yml` запускается для каждого `pull_request`
+и `push`.
+
+Pipeline выполняется последовательно:
+
+```
+Black и тесты → сборка Docker-образов → деплой
+```
+
+Проверяются форматирование Black, настройки Django, наличие незаписанных
+миграций, 26 тестов и возможность сборки Docker-сервисов. Если один из этапов
+завершается ошибкой, следующие этапы не запускаются. Деплой пропускается для
+Pull Request и выполняется только после успешного `push` или merge в `develop`.
+
+## Подготовка VM в Yandex Cloud
+
+Для учебного проекта достаточно одной VM со следующими параметрами:
+
+* Ubuntu 24.04 LTS;
+* 2 vCPU и 2 ГБ RAM;
+* диск 15–20 ГБ;
+* публичный IPv4;
+* входящие подключения `22/tcp` для SSH и `80/tcp` для HTTP.
+
+Порты `8000`, `5432` и `6379` в Yandex Cloud открывать не нужно.
+
+Подключитесь к серверу по SSH и установите Git, Docker и Docker Compose:
+
+```
+sudo apt update
+sudo apt install -y git docker.io docker-compose-v2
+sudo systemctl enable --now docker
+sudo usermod -aG docker $USER
+```
+
+После добавления пользователя в группу `docker` завершите SSH-сеанс и
+подключитесь снова. Проверьте установку:
+
+```
+docker --version
+docker compose version
+git --version
+```
+
+Клонируйте ветку `develop`, создайте серверный `.env` и ограничьте доступ к
+нему:
+
+```
+git clone --branch develop https://github.com/USERNAME/Tracker.git ~/Tracker
+cd ~/Tracker
+cp .env_example .env
+chmod 600 .env
+```
+
+В серверном `.env` обязательно задайте:
+
+* `DEBUG=False`;
+* публичный IP сервера в `ALLOWED_HOSTS` вместе с `localhost` и `127.0.0.1`;
+* уникальные `DJANGO_SECRET_KEY` и `DB_PASSWORD`;
+* `DB_HOST=db`;
+* адреса Redis с хостом `redis`;
+* настоящий `TELEGRAM_BOT_TOKEN`, если нужны Telegram-уведомления.
+
+Первый запуск и проверка:
+
+```
+docker compose up -d --build
+docker compose ps
+curl --fail http://127.0.0.1/api/schema/
+```
+
+После запуска Swagger доступен по адресу
+`http://<публичный-IP>/api/docs/swagger/`.
+
+## SSH-доступ для GitHub Actions
+
+Для автоматического деплоя используйте отдельную SSH-пару. Открытый ключ
+добавляется в `~/.ssh/authorized_keys` серверного пользователя. Закрытый ключ
+сохраняется только в GitHub Secrets и не добавляется в репозиторий.
+
+В репозитории откройте
+`Settings → Secrets and variables → Actions` и создайте:
+
+* `SERVER_IP` — публичный IP VM;
+* `SSH_USER` — SSH-пользователь;
+* `SSH_KEY` — полный закрытый SSH-ключ.
+
+Перед первым автоматическим деплоем каталог `~/Tracker` уже должен существовать
+на сервере, репозиторий должен находиться на ветке `develop`, а серверный `.env`
+должен быть заполнен. Workflow выполнит `git pull --ff-only`, пересоберёт и
+запустит контейнеры, затем проверит OpenAPI-схему через Nginx.
+
+## Диагностика деплоя
+
+На сервере проверьте состояние и последние логи:
+
+```
+cd ~/Tracker
+docker compose ps
+docker compose logs --tail=100
+```
+
+После перезагрузки VM контейнеры можно снова запустить без пересборки:
+
+```
+cd ~/Tracker
+docker compose up -d
+```
 
 ---
 
