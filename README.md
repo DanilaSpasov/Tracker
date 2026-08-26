@@ -168,7 +168,7 @@ cp .env_example .env
 
 # Запуск через Docker Compose
 
-Для запуска требуется Docker с поддержкой Docker Compose. На macOS сначала запустите Docker Desktop.
+Для запуска требуется Docker с поддержкой Docker Compose. 
 
 Создайте `.env` и замените значения-заглушки:
 
@@ -202,26 +202,6 @@ docker compose ps
 curl --fail http://localhost/api/schema/
 ```
 
-Swagger UI после запуска доступен по адресу
-`http://localhost/api/docs/swagger/`.
-
-Тесты внутри контейнера:
-
-```
-docker compose exec web poetry run python manage.py test --noinput
-```
-
-Просмотр логов:
-
-```
-docker compose logs -f
-```
-
-Остановка контейнеров без удаления данных:
-
-```
-docker compose down
-```
 
 Данные PostgreSQL и Redis сохраняются в Docker volumes. Команда
 `docker compose down -v` удаляет volumes вместе с данными и не должна
@@ -319,101 +299,6 @@ Black и тесты → сборка Docker-образов → деплой
 миграций, 26 тестов и возможность сборки Docker-сервисов. Если один из этапов
 завершается ошибкой, следующие этапы не запускаются. Деплой пропускается для
 Pull Request и выполняется только после успешного `push` или merge в `develop`.
-
-## Подготовка VM в Yandex Cloud
-
-Для учебного проекта достаточно одной VM со следующими параметрами:
-
-* Ubuntu 24.04 LTS;
-* 2 vCPU и 2 ГБ RAM;
-* диск 15–20 ГБ;
-* публичный IPv4;
-* входящие подключения `22/tcp` для SSH и `80/tcp` для HTTP.
-
-Порты `8000`, `5432` и `6379` в Yandex Cloud открывать не нужно.
-
-Подключитесь к серверу по SSH и установите Git, Docker и Docker Compose:
-
-```
-sudo apt update
-sudo apt install -y git docker.io docker-compose-v2
-sudo systemctl enable --now docker
-sudo usermod -aG docker $USER
-```
-
-После добавления пользователя в группу `docker` завершите SSH-сеанс и
-подключитесь снова. Проверьте установку:
-
-```
-docker --version
-docker compose version
-git --version
-```
-
-Клонируйте ветку `develop`, создайте серверный `.env` и ограничьте доступ к
-нему:
-
-```
-git clone --branch develop https://github.com/USERNAME/Tracker.git ~/Tracker
-cd ~/Tracker
-cp .env_example .env
-chmod 600 .env
-```
-
-В серверном `.env` обязательно задайте:
-
-* `DEBUG=False`;
-* публичный IP сервера в `ALLOWED_HOSTS` вместе с `localhost` и `127.0.0.1`;
-* уникальные `DJANGO_SECRET_KEY` и `DB_PASSWORD`;
-* `DB_HOST=db`;
-* адреса Redis с хостом `redis`;
-* настоящий `TELEGRAM_BOT_TOKEN`, если нужны Telegram-уведомления.
-
-Первый запуск и проверка:
-
-```
-docker compose up -d --build
-docker compose ps
-curl --fail http://127.0.0.1/api/schema/
-```
-
-После запуска Swagger доступен по адресу
-`http://<публичный-IP>/api/docs/swagger/`.
-
-## SSH-доступ для GitHub Actions
-
-Для автоматического деплоя используйте отдельную SSH-пару. Открытый ключ
-добавляется в `~/.ssh/authorized_keys` серверного пользователя. Закрытый ключ
-сохраняется только в GitHub Secrets и не добавляется в репозиторий.
-
-В репозитории откройте
-`Settings → Secrets and variables → Actions` и создайте:
-
-* `SERVER_IP` — публичный IP VM;
-* `SSH_USER` — SSH-пользователь;
-* `SSH_KEY` — полный закрытый SSH-ключ.
-
-Перед первым автоматическим деплоем каталог `~/Tracker` уже должен существовать
-на сервере, репозиторий должен находиться на ветке `develop`, а серверный `.env`
-должен быть заполнен. Workflow выполнит `git pull --ff-only`, пересоберёт и
-запустит контейнеры, затем проверит OpenAPI-схему через Nginx.
-
-## Диагностика деплоя
-
-На сервере проверьте состояние и последние логи:
-
-```
-cd ~/Tracker
-docker compose ps
-docker compose logs --tail=100
-```
-
-После перезагрузки VM контейнеры можно снова запустить без пересборки:
-
-```
-cd ~/Tracker
-docker compose up -d
-```
 
 ---
 
