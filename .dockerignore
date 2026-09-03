@@ -1,0 +1,12 @@
+.env
+.git
+.github
+.idea
+.venv
+__pycache__
+*.py[cod]
+.coverage
+htmlcov
+staticfiles
+celerybeat-schedule*
+docs/superpowers
